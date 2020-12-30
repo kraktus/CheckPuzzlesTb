@@ -179,7 +179,7 @@ class PuzzleChecker:
         #log.warning(f"fen: {fen}, expected_move: {expected_move}, {expected_winning}: expected_winning")
         r = self.http.get(TB_API.format(fen))
         rep = r.json()
-        log.debug(rep)
+        log.debug(f"fen: {fen} rep: {str(rep)}")
         if expected_winning:
             res = self.check_winning(fen, expected_move, rep)
         else: # For equality puzzles
