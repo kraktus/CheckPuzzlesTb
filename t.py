@@ -298,5 +298,8 @@ if __name__ == "__main__":
     #print(PuzzleChecker().req("8/2K5/4B3/3N4/8/8/4k3/8 b - - 0 1", "e5f6"))
     #print(PuzzleChecker().req("8/8/8/8/8/6K1/4Q3/7k b - - 0 1", "h1g1"))
     #print(PuzzleChecker().req("7Q/8/8/1pk5/8/1q2K3/8/8 w - - 0 1", "e3d2", False))
+
+
+    # Some rarities where the player to move actually lose: https://lichess.org/training/DHvnF https://lichess.org/training/ERVwp https://lichess.org/training/U62fH https://lichess.org/training/jBUOV https://lichess.org/training/nBqNu https://lichess.org/training/snDwA
     
 
