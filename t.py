@@ -23,6 +23,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from dotenv import load_dotenv
 from pathlib import Path
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 from typing import Any, Dict, List, Iterator, Optional, Set
 
 #############
@@ -37,6 +39,15 @@ PUZZLE_PATH = "puzzle.csv"
 PUZZLE_CHECKED_PATH = "puzzle_checked.txt"
 
 TB_API = "http://tablebase.lichess.ovh/standard?fen={}"
+
+
+RETRY_STRAT = Retry(
+    total=5,
+    backoff_factor=200,
+    status_forcelist=[429, 500, 502, 503, 504],
+    method_whitelist=["GET"]
+)
+ADAPTER = HTTPAdapter(max_retries=RETRY_STRAT)
 
 
 ########
@@ -132,49 +143,53 @@ class Puzzle:
 
 class PuzzleChecker:
 
+    def __init__(self):
+        http = requests.Session()
+        http.mount("https://", ADAPTER)
+        http.mount("http://", ADAPTER)
+        self.http = http
 
-    def check():
-        unchecked_puzzles = self.filtered_mate_puzzles()
+    def check(self):
+        all_7p_puzzles = self.filtered_mate_puzzles()
         already_checked_puzzles = self.list_puzzles_checked()
+        unchecked_puzzles = list(filter(lambda x: not x[0] in already_checked_puzzles, all_7p_puzzles.items()))
+        log.warning(unchecked_puzzles[:10])
+        log.info(f"{len(unchecked_puzzles)} still need to be checked")
+        dep = time.time()
         with open(PUZZLE_CHECKED_PATH, "a") as output:
-            for puzzle_id, puzzle_info in unchecked_puzzles.items():
-                if puzzle_id in already_checked_puzzles:
-                    continue
-
+            for i, (puzzle_id, puzzle_info) in enumerate(unchecked_puzzles):
+                print(f"\r{i} puzzles processed, {time.time() - dep:.2f}s",end="")
                 b = Board(fen=puzzle_info.fen)
+                res = set()
                 for i, move in enumerate(puzzle_info.moves): 
-                    if i % 2: # 0, 2, 4... are moves made by the opponent, we don't check them
-                        res = self.req(b.epd(), move, puzzle_info.expected_winning)
-                        if bool(res): # Not empty
-                            log.error(f"puzzle {puzzle_id} contains some errors: {res}")
-                        output.write(puzzle_id + " " + " ".join(res) + "\n")
+                    if i % 2 and nb_piece(b) <= 7: # 0, 2, 4... are moves made by the opponent, we don't check them
+                        res = res.union(self.req(b.fen(), move, puzzle_info.expected_winning))
                     b.push_uci(move)
+                if bool(res): # Not empty
+                    log.error(f"puzzle {puzzle_id} contains some errors: {res}")
+                output.write(puzzle_id + " " + " ".join(res) + "\n")
+                time.sleep(0.55) #rate-limited otherwise
 
 
     def req(self, fen: str, expected_move: str, expected_winning: bool = True) -> Set[Error]:
         """
-        return `True` if `expected_move` is the only winning move, `False` otherwise.
+        return a set of errors taking in count the goal of the puzzle
         log wrongs puzzles
-
-        Cannot be used for equality puzzles
         """
-        with requests.get(TB_API.format(fen)) as r:
-            if r.status_code != 200:
-                log.error(f"\nError, http code: {r.status_code}")
-                time.sleep(65) #Respect rate-limits!
-
-            rep = r.json()
-            log.debug(rep)
-            if expected_winning:
-                res = self.check_winning(fen, expected_move, rep)
-            else: # For equality puzzles
-                res = self.check_drawing(fen, expected_move, rep)
+        #log.warning(f"fen: {fen}, expected_move: {expected_move}, {expected_winning}: expected_winning")
+        r = self.http.get(TB_API.format(fen))
+        rep = r.json()
+        log.debug(rep)
+        if expected_winning:
+            res = self.check_winning(fen, expected_move, rep)
+        else: # For equality puzzles
+            res = self.check_drawing(fen, expected_move, rep)
         return res
 
     def check_winning(self, fen: str, expected_move: str, rep: Dict[str, Any]) -> Set[Error]:
         res = set()
         if rep["wdl"] != 2:
-            log.error(f"position {fen} can't be won by side to move, wdl: " + "{}".format(rep["wdl"] ))
+            log.error(f"position {fen} can't be won by side to move, wdl: " + "{}".format(rep["wdl"]))
             res.add(Error.Wrong)
         for move in rep["moves"]:
             # move["wdl"] is from the opponent's point of vue
@@ -260,12 +275,13 @@ def filtering_7pieces():
 def checking_puzzles():
     log.info("Checking puzzles with <= 7 pieces")
     checker = PuzzleChecker()
-
+    checker.check()
+    #log.debug(list(checker.filtered_mate_puzzles().items())[:10])
     log.info("done")
 
 
 def main():
-    pass
+    checking_puzzles()
     
 
 
@@ -275,7 +291,7 @@ def main():
 
 if __name__ == "__main__":
     print('#'*80)
-    #main()
+    main()
 
     # Maybe futur test
     #print(PuzzleChecker().req("6k1/6p1/6K1/4q2Q/7P/8/8/8 b - - 12 71", "e5f6"))
