@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from enum import Enum
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from typing import Any, Dict, List, Iterator, Optional, Set
+from typing import Any, Dict, List, Iterator, Optional, Set, Tuple
 
 #############
 # Constants #
@@ -143,9 +143,7 @@ class PuzzleChecker:
         return time.time() - self.dep
 
     def check(self: PuzzleChecker) -> None:
-        all_7p_puzzles = self.filtered_mate_puzzles()
-        already_checked_puzzles = self.list_puzzles_checked()
-        unchecked_puzzles = list(filter(lambda x: not x[0] in already_checked_puzzles, all_7p_puzzles.items()))
+        unchecked_puzzles = self.list_unchecked_puzzles()
         log.info(f"{len(unchecked_puzzles)} still need to be checked")
         with open(PUZZLE_CHECKED_PATH, "a") as output:
             for i, (puzzle_id, puzzle_info) in enumerate(unchecked_puzzles):
@@ -206,6 +204,17 @@ class PuzzleChecker:
                 res.add(Error.Multiple)
         return res
 
+    def list_unchecked_puzzles(self: PuzzleChecker) -> List[Tuple[str, Puzzle]]:
+        all_7p_puzzles = self.filtered_mate_puzzles()
+        #log.warning()
+        log.warning(f"{len(all_7p_puzzles)} in all")
+        already_checked_puzzles = self.list_puzzles_checked()
+        checked_but_not_listed_anymore = list(filter(lambda x: not x in all_7p_puzzles.keys(), already_checked_puzzles))
+        if checked_but_not_listed_anymore:
+            log.error(f"{len(checked_but_not_listed_anymore)} puzzles were checked but are not in the list of all puzzles anymore: {checked_but_not_listed_anymore}")
+        unchecked_puzzles = list(filter(lambda x: not x[0] in already_checked_puzzles, all_7p_puzzles.items()))
+        return unchecked_puzzles
+
     def list_puzzles_checked(self: PuzzleChecker) -> Set[str]:
         """
         return a set of checked puzzles, and at the same time check if one puzzle is not there twice
@@ -219,6 +228,25 @@ class PuzzleChecker:
                     if puzzle_id in s:
                         log.error(f"{puzzle_id} checked more than once")
                     s.add(puzzle_id)
+        except FileNotFoundError:
+            log.info(f"{PUZZLE_CHECKED_PATH} not found, 0 puzzle checked")
+        return s
+
+    def list_incorrect_puzzles(self: PuzzleChecker) -> Set[str]:
+        """
+        return a set of checked and incorrect puzzles. At the same time check if one puzzle is not there twice
+        """
+        s = set()
+        try:
+            with open(PUZZLE_CHECKED_PATH, "r") as file_input:
+                for line in file_input:
+                    # puzzle_id error1 error2 error3...
+                    args = line.split()
+                    puzzle_id = args[0]
+                    if puzzle_id in s:
+                        log.error(f"{puzzle_id} checked more than once")
+                    if len(args) > 1:
+                        s.add(args[0])
         except FileNotFoundError:
             log.info(f"{PUZZLE_CHECKED_PATH} not found, 0 puzzle checked")
         return s
@@ -259,7 +287,15 @@ def checking_puzzles():
     log.info("Checking puzzles with <= 7 pieces")
     checker = PuzzleChecker()
     checker.check()
-    #log.debug(list(checker.filtered_mate_puzzles().items())[:10])
+    log.info("done")
+
+def incorrect_puzzles():
+    log.info("Listing incorrect puzzles")
+    checker = PuzzleChecker()
+    puzzles = checker.list_incorrect_puzzles()
+    with open("incorrect_puzzles_id.txt", "w") as output:
+        for p in puzzles:
+            output.write(p + "\n")
     log.info("done")
 
 
@@ -268,6 +304,7 @@ def main():
     commands = {
     "filter": filtering_7pieces,
     "check": checking_puzzles,
+    "incorrect": incorrect_puzzles
     }
     parser.add_argument("command", choices=commands.keys())
     args = parser.parse_args()

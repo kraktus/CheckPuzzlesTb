@@ -1,4 +1,5 @@
 .env
-
+incorrect_puzzles_id.txt
 puz.log
 puzzle.csv
+/venv
