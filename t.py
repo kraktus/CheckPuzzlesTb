@@ -18,13 +18,14 @@ import os
 import time
 import sys
 
+from argparse import RawTextHelpFormatter
 from chess import Board
 from dataclasses import dataclass
 from dotenv import load_dotenv
 from enum import Enum
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from typing import Any, Dict, List, Iterator, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 #############
 # Constants #
@@ -119,6 +120,7 @@ class FileHandler:
                 return True # should be always 7
         return False
 
+# Not upper-case for backward compatibility with previous output
 class Error(Enum):
     Wrong = "Wrong"
     Multiple = "Multiple"
@@ -156,7 +158,7 @@ class PuzzleChecker:
                     b.push_uci(move)
                 if bool(res): # Not empty
                     log.error(f"puzzle {puzzle_id} contains some errors: {res}")
-                output.write(puzzle_id + " " + " ".join(res) + "\n")
+                output.write(puzzle_id + " " + " ".join(map(lambda x: x.name, res)) + "\n")
                 time.sleep(0.55) #rate-limited otherwise
 
     def req(self: PuzzleChecker, fen: str, expected_move: str, expected_winning: bool = True) -> Set[Error]:
@@ -277,19 +279,29 @@ class PuzzleChecker:
 def nb_piece(b: Board) -> int:
     return bin(b.occupied).count('1')
 
-def filtering_7pieces():
+def filtering_7pieces() -> None:
+    """
+    Select all puzzles from `DB_PATH` that have at point <= 7 pieces on the board, and save them in file `PUZZLE_PATH`
+    """
     log.info("Looking for puzzles with <= 7 pieces")
     file_handler = FileHandler()
     file_handler.extract_puzzle_inf_7piece()
     log.info("done")
 
-def checking_puzzles():
+def checking_puzzles() -> None:
+    """
+    Look at every puzzle in `PUZZLE_PATH`, minus the ones with mate tag, and check them gainst syzygy tb.
+    Save the results in `PUZZLE_CHECKED_PATH`, with every line being `<puzzle_id> <optional[error_1]> <optional[error_2]>...
+    """
     log.info("Checking puzzles with <= 7 pieces")
     checker = PuzzleChecker()
     checker.check()
     log.info("done")
 
-def incorrect_puzzles():
+def incorrect_puzzles() -> None:
+    """
+    Look at every puzzle in `PUZZLE_CHECKED_PATH`, and save the list of ids of the ones which are incorrect in `incorrect_puzzles_id.txt`.
+    """
     log.info("Listing incorrect puzzles")
     checker = PuzzleChecker()
     puzzles = checker.list_incorrect_puzzles()
@@ -298,15 +310,21 @@ def incorrect_puzzles():
             output.write(p + "\n")
     log.info("done")
 
+def doc(dic: Dict[str, Callable[Any, Any]]) -> str:
+    """Produce documentation for every command based on doc of each function"""
+    doc_string = ""
+    for name_cmd, func in dic.items():
+        doc_string += f"{name_cmd}: {func.__doc__}\n\n"
+    return doc_string
 
-def main():
-    parser = argparse.ArgumentParser()
+def main() -> None:
+    parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
     commands = {
     "filter": filtering_7pieces,
     "check": checking_puzzles,
-    "incorrect": incorrect_puzzles
+    "export": incorrect_puzzles
     }
-    parser.add_argument("command", choices=commands.keys())
+    parser.add_argument("command", choices=commands.keys(), help=doc(commands))
     args = parser.parse_args()
     commands[args.command]()
 
