@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 load_dotenv()
 
-DB_PATH = os.getenv("DB_PATH")
+DB_PATH = os.getenv("DB_PATH") # lichess puzzle V2 db
 LOG_PATH = "puz.log"
 PUZZLE_PATH = "puzzle.csv"
 PUZZLE_CHECKED_PATH = "puzzle_checked.txt"
@@ -119,6 +119,19 @@ class FileHandler:
             if nb_pieces <= 7:
                 return True # should be always 7
         return False
+
+
+    def remove_puzzles(self, l_puzzle_id: Set[str]) -> None:
+        """Remove all  `l_puzzle_id` puzzles from `PUZZLE_CHECKED_PATH`"""
+        temp_name = "temporary_file.txt"
+        with open(PUZZLE_CHECKED_PATH, 'r') as file_input, open(temp_name, 'w') as temp_file
+            for line in file_input:
+                puzzle_id = line.split()[0]
+                if not puzzle_id in l_puzzle_id:
+                    temp_file.write(f"{line}")
+        os.replace(temp_name, PUZZLE_CHECKED_PATH) # temp_name -> PUZZLE_CHECKED_PATH
+
+
 
 # Not upper-case for backward compatibility with previous output
 class Error(Enum):
@@ -208,14 +221,21 @@ class PuzzleChecker:
 
     def list_unchecked_puzzles(self: PuzzleChecker) -> List[Tuple[str, Puzzle]]:
         all_7p_puzzles = self.filtered_mate_puzzles()
-        #log.warning()
-        log.warning(f"{len(all_7p_puzzles)} in all")
         already_checked_puzzles = self.list_puzzles_checked()
         checked_but_not_listed_anymore = list(filter(lambda x: not x in all_7p_puzzles.keys(), already_checked_puzzles))
         if checked_but_not_listed_anymore:
             log.error(f"{len(checked_but_not_listed_anymore)} puzzles were checked but are not in the list of all puzzles anymore: {checked_but_not_listed_anymore}")
         unchecked_puzzles = list(filter(lambda x: not x[0] in already_checked_puzzles, all_7p_puzzles.items()))
         return unchecked_puzzles
+
+    def list_legacy_puzzle(self: PuzzleChecker) -> List[str]:
+        """Puzzles that are not longer in `DB_PATH`"""
+        all_7p_puzzles = self.filtered_mate_puzzles()
+        already_checked_puzzles = self.list_puzzles_checked()
+        checked_but_not_listed_anymore = list(filter(lambda x: not x in all_7p_puzzles.keys(), already_checked_puzzles))
+        if checked_but_not_listed_anymore:
+            log.error(f"{len(checked_but_not_listed_anymore)} puzzles were checked but are not in the list of all puzzles anymore: {checked_but_not_listed_anymore}")
+        return checked_but_not_listed_anymore
 
     def list_puzzles_checked(self: PuzzleChecker) -> Set[str]:
         """
@@ -307,7 +327,18 @@ def incorrect_puzzles() -> None:
     puzzles = checker.list_incorrect_puzzles()
     with open("incorrect_puzzles_id.txt", "w") as output:
         for p in puzzles:
-            output.write(p + "\n")
+            output.write(f"{p}\n")
+    log.info("done")
+
+def remove_puzzles_no_longer_db() -> None:
+    """
+    Remove all puzzles that are in `PUZZLE_CHECKED_PATH`, but not in `DB_PATH` anymore, which means they've been deleted on Lichess.
+    """
+    log.info("Removing legacy puzzles")
+    file_handler = FileHandler()
+    checker = PuzzleChecker()
+    puzzles = checker.list_incorrect_puzzles()
+    file_handler.remove_puzzles(puzzles)
     log.info("done")
 
 def doc(dic: Dict[str, Callable[Any, Any]]) -> str:
@@ -322,7 +353,8 @@ def main() -> None:
     commands = {
     "filter": filtering_7pieces,
     "check": checking_puzzles,
-    "export": incorrect_puzzles
+    "export": incorrect_puzzles,
+    "clean": remove_puzzles_no_longer_db
     }
     parser.add_argument("command", choices=commands.keys(), help=doc(commands))
     args = parser.parse_args()
