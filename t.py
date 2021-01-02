@@ -124,7 +124,7 @@ class FileHandler:
     def remove_puzzles(self, l_puzzle_id: Set[str]) -> None:
         """Remove all  `l_puzzle_id` puzzles from `PUZZLE_CHECKED_PATH`"""
         temp_name = "temporary_file.txt"
-        with open(PUZZLE_CHECKED_PATH, 'r') as file_input, open(temp_name, 'w') as temp_file:
+        with open(PUZZLE_CHECKED_PATH, 'r') as file_input, open(temp_name, 'w') as temp_file
             for line in file_input:
                 puzzle_id = line.split()[0]
                 if not puzzle_id in l_puzzle_id:
