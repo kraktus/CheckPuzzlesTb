@@ -124,7 +124,7 @@ class FileHandler:
     def remove_puzzles(self, l_puzzle_id: Set[str]) -> None:
         """Remove all  `l_puzzle_id` puzzles from `PUZZLE_CHECKED_PATH`"""
         temp_name = "temporary_file.txt"
-        with open(PUZZLE_CHECKED_PATH, 'r') as file_input, open(temp_name, 'w') as temp_file
+        with open(PUZZLE_CHECKED_PATH, 'r') as file_input, open(temp_name, 'w') as temp_file:
             for line in file_input:
                 puzzle_id = line.split()[0]
                 if not puzzle_id in l_puzzle_id:
@@ -228,11 +228,11 @@ class PuzzleChecker:
         unchecked_puzzles = list(filter(lambda x: not x[0] in already_checked_puzzles, all_7p_puzzles.items()))
         return unchecked_puzzles
 
-    def list_legacy_puzzle(self: PuzzleChecker) -> List[str]:
+    def list_legacy_puzzle(self: PuzzleChecker) -> Set[str]:
         """Puzzles that are not longer in `DB_PATH`"""
         all_7p_puzzles = self.filtered_mate_puzzles()
         already_checked_puzzles = self.list_puzzles_checked()
-        checked_but_not_listed_anymore = list(filter(lambda x: not x in all_7p_puzzles.keys(), already_checked_puzzles))
+        checked_but_not_listed_anymore = set(filter(lambda x: not x in all_7p_puzzles.keys(), already_checked_puzzles))
         if checked_but_not_listed_anymore:
             log.error(f"{len(checked_but_not_listed_anymore)} puzzles were checked but are not in the list of all puzzles anymore: {checked_but_not_listed_anymore}")
         return checked_but_not_listed_anymore
@@ -337,11 +337,11 @@ def remove_puzzles_no_longer_db() -> None:
     log.info("Removing legacy puzzles")
     file_handler = FileHandler()
     checker = PuzzleChecker()
-    puzzles = checker.list_incorrect_puzzles()
+    puzzles = checker.list_legacy_puzzle()
     file_handler.remove_puzzles(puzzles)
     log.info("done")
 
-def doc(dic: Dict[str, Callable[Any, Any]]) -> str:
+def doc(dic: Dict[str, Callable[..., Any]]) -> str:
     """Produce documentation for every command based on doc of each function"""
     doc_string = ""
     for name_cmd, func in dic.items():
