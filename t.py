@@ -332,7 +332,7 @@ def incorrect_puzzles() -> None:
 
 def remove_puzzles_no_longer_db() -> None:
     """
-    Remove all puzzles that are in `PUZZLE_CHECKED_PATH`, but not in `DB_PATH` anymore, which means they've been deleted on Lichess.
+    Remove all puzzles that are in `PUZZLE_CHECKED_PATH`, but not in `PUZZLE_PATH` anymore, which means they've been deleted on Lichess. /!\\ Run `filter` command before
     """
     log.info("Removing legacy puzzles")
     file_handler = FileHandler()
