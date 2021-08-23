@@ -43,7 +43,7 @@ TB_API = "http://tablebase.lichess.ovh/standard?fen={}"
 
 RETRY_STRAT = Retry(
     total=5,
-    backoff_factor=200,
+    backoff_factor=1,
     status_forcelist=[429, 500, 502, 503, 504],
     method_whitelist=["GET"]
 )
