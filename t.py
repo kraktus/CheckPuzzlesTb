@@ -325,7 +325,7 @@ def incorrect_puzzles() -> None:
     log.info("Listing incorrect puzzles")
     checker = PuzzleChecker()
     puzzles = checker.list_incorrect_puzzles()
-    with open("incorrect_puzzles_id.txt", "w") as output:
+    with open("incorrect_puzzle_ids.txt", "w") as output:
         for p in puzzles:
             output.write(f"{p}\n")
     log.info("done")
