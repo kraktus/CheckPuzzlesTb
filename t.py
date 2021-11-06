@@ -163,16 +163,20 @@ class PuzzleChecker:
         with open(PUZZLE_CHECKED_PATH, "a") as output:
             for i, (puzzle_id, puzzle_info) in enumerate(unchecked_puzzles):
                 print(f"\r{i} puzzles processed, {self.tl():.2f}s",end="")
-                b = Board(fen=puzzle_info.fen)
-                res: Set[Error] = set()
-                for i, move in enumerate(puzzle_info.moves): 
-                    if i % 2 and nb_piece(b) <= 7: # 0, 2, 4... are moves made by the opponent, we don't check them
-                        res = res.union(self.req(b.fen(), move, puzzle_info.expected_winning))
-                    b.push_uci(move)
+                res = self.check_puzzle(puzzle_info)
                 if bool(res): # Not empty
                     log.error(f"puzzle {puzzle_id} contains some errors: {res}")
-                output.write(puzzle_id + " " + " ".join(map(lambda x: x.name, res)) + "\n")
+                output.write(puzzle_id + " " + " ".join([x.name for x in res]) + "\n")
                 time.sleep(0.55) #rate-limited otherwise
+
+    def check_puzzle(self: PuzzleChecker, puzzle: Puzzle) -> Set[Error]:
+        b = Board(fen=puzzle.fen)
+        res: Set[Error] = set()
+        for i, move in enumerate(puzzle.moves): 
+            if i % 2 and nb_piece(b) <= 7: # 0, 2, 4... are moves made by the opponent, we don't check them
+                res = res.union(self.req(b.fen(), move, puzzle.expected_winning))
+            b.push_uci(move)
+        return res
 
     def req(self: PuzzleChecker, fen: str, expected_move: str, expected_winning: bool = True) -> Set[Error]:
         """
@@ -191,30 +195,30 @@ class PuzzleChecker:
 
     def check_winning(self: PuzzleChecker, fen: str, expected_move: str, rep: Dict[str, Any]) -> Set[Error]:
         res = set()
-        if rep["wdl"] != 2:
-            log.error(f"position {fen} can't be won by side to move, wdl: " + "{}".format(rep["wdl"]))
+        if rep["category"] != "win":
+            log.error(f"position {fen} can't be won by side to move, category: " + "{}".format(rep["category"]))
             res.add(Error.Wrong)
         for move in rep["moves"]:
-            # move["wdl"] is from the opponent's point of vue
-            if move["uci"] == expected_move and move["wdl"] != -2:
-                log.error(f"in position {fen}," + " {}({}) is not winning, opponent's wdl: {}".format(move["uci"], move["san"], move["wdl"]))
+            # move["category"] is from the opponent's point of vue
+            if move["uci"] == expected_move and move["category"] != "loss":
+                log.error(f"in position {fen}," + " {}({}) is not winning, opponent's category: {}".format(move["uci"], move["san"], move["category"]))
                 res.add(Error.Wrong)
-            elif move["wdl"] == -2 and move["uci"] != expected_move: # a move winning which is not `expected_move`, puzzle is wrong 
+            elif move["category"] == "loss" and move["uci"] != expected_move: # a winning move which is not `expected_move`, puzzle is wrong 
                 log.error(f"in position {fen}," + " {}({}) is also winning".format(move["uci"], move["san"]))
                 res.add(Error.Multiple)
         return res
 
     def check_drawing(self: PuzzleChecker, fen: str, expected_move: str, rep: Dict[str, Any]) -> Set[Error]:
         res = set()
-        if rep["wdl"] != 0:
-            log.error(f"position {fen} is not draw, wdl: " + "{}".format(rep["wdl"] ))
+        if not is_draw(rep):
+            log.error(f"position {fen} is not draw, category: " + "{}".format(rep["category"] ))
             res.add(Error.Wrong)
         for move in rep["moves"]:
-            # move["wdl"] is from the opponent's point of vue
-            if move["uci"] == expected_move and move["wdl"] != 0:
-                log.error(f"in position {fen}," + " {}({}) is not drawing, opponent's wdl: {}".format(move["uci"], move["san"], move["wdl"]))
+            # move["category"] is from the opponent's point of vue
+            if move["uci"] == expected_move and not is_draw(move):
+                log.error(f"in position {fen}," + " {}({}) is not drawing, opponent's category: {}".format(move["uci"], move["san"], move["category"]))
                 res.add(Error.Wrong)
-            elif move["wdl"] == 0 and move["uci"] != expected_move: # a move winning which is not `expected_move`, puzzle is wrong 
+            elif is_draw(move) and move["uci"] != expected_move: # a drawing move which is not `expected_move`, puzzle is wrong 
                 log.error(f"in position {fen}," + " {}({}) is also drawing".format(move["uci"], move["san"]))
                 res.add(Error.Multiple)
         return res
@@ -298,6 +302,9 @@ class PuzzleChecker:
 
 def nb_piece(b: Board) -> int:
     return bin(b.occupied).count('1')
+
+def is_draw(api_rep: Dict[str, str]) -> bool:
+    return api_rep["category"] in ["cursed-win", "draw", "blessed-loss"]
 
 def filtering_7pieces() -> None:
     """
