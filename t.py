@@ -143,6 +143,7 @@ class Puzzle:
     fen: str
     moves: List[str]
     expected_winning: bool
+    mate: Optional[int] = None
 
 class PuzzleChecker:
 
@@ -157,8 +158,8 @@ class PuzzleChecker:
         """time elapsed"""
         return time.time() - self.dep
 
-    def check(self: PuzzleChecker) -> None:
-        unchecked_puzzles = self.list_unchecked_puzzles()
+    def check(self: PuzzleChecker, mate = False) -> None:
+        unchecked_puzzles = self.list_unchecked_puzzles(mate)
         log.info(f"{len(unchecked_puzzles)} still need to be checked")
         with open(PUZZLE_CHECKED_PATH, "a") as output:
             for i, (puzzle_id, puzzle_info) in enumerate(unchecked_puzzles):
@@ -172,22 +173,24 @@ class PuzzleChecker:
     def check_puzzle(self: PuzzleChecker, puzzle: Puzzle) -> Set[Error]:
         b = Board(fen=puzzle.fen)
         res: Set[Error] = set()
-        for i, move in enumerate(puzzle.moves): 
+        for i, move in enumerate(puzzle.moves):
             if i % 2 and nb_piece(b) <= 7: # 0, 2, 4... are moves made by the opponent, we don't check them
-                res = res.union(self.req(b.fen(), move, puzzle.expected_winning))
+                res = res.union(self.req(b.fen(), move, puzzle, i))
             b.push_uci(move)
         return res
 
-    def req(self: PuzzleChecker, fen: str, expected_move: str, expected_winning: bool = True) -> Set[Error]:
+    def req(self: PuzzleChecker, fen: str, expected_move: str, puzzle: Puzzle, move_number: int) -> Set[Error]:
         """
         return a set of errors taking in count the goal of the puzzle
         log wrong puzzles
         """
-        #log.warning(f"fen: {fen}, expected_move: {expected_move}, {expected_winning}: expected_winning")
         r = self.http.get(TB_API.format(fen))
         rep = r.json()
         log.debug(f"fen: {fen} rep: {str(rep)}")
-        if expected_winning:
+        if puzzle.mate is not None:
+            log.info("Checking mate")
+            res = self.check_mate(fen, expected_move, rep, move_number)
+        elif puzzle.expected_winning:
             res = self.check_winning(fen, expected_move, rep)
         else: # For equality puzzles
             res = self.check_drawing(fen, expected_move, rep)
@@ -223,20 +226,60 @@ class PuzzleChecker:
                 res.add(Error.Multiple)
         return res
 
-    def list_unchecked_puzzles(self: PuzzleChecker) -> List[Tuple[str, Puzzle]]:
-        all_7p_puzzles = self.filtered_mate_puzzles()
+    def check_mate(self: PuzzleChecker, fen: str, expected_move: str, rep: Dict[str, Any], mate_in: int) -> Set[Error]:
+        res = set()
+        if rep["category"] != "win":
+            log.error(f"position {fen} can't be won by side to move, category: " + "{}".format(rep["category"]))
+            res.add(Error.Wrong)
+        if rep["dtm"] is not None and int(rep["dtm"]) != mate_in:
+            log.error("position {} is not mate in {}, but {}.".format(fen, mate_in, rep["dtm"]))
+            res.add(Error.Wrong)
+        for move in rep["moves"]:
+            # move["category"] is from the opponent's point of vue
+            if move["uci"] == expected_move and move["category"] != "loss":
+                log.error(f"in position {fen}," + " {}({}) is not winning, opponent's category: {}".format(move["uci"], move["san"], move["category"]))
+                res.add(Error.Wrong)
+            if move["checkmate"]: # Always good
+                continue
+            if move["dtm"] is not None:
+                # Another move that result in a mate in the same number of moves
+                if int(move["dtm"]) == (mate_in - 1) :
+                    log.error("position {} after {} is not mate in {}, but {}.".format(fen, move["uci"], mate_in, rep["dtm"]))
+                    res.add(Error.Wrong)
+            else:
+                # If we do not have DTM, we approximate DTZ to DTM.
+                if move["category"] == "loss" and move["uci"] != expected_move: # a winning move which is not `expected_move`, puzzle is wrong
+                    log.error(f"in position {fen}," + " {}({}) is also winning".format(move["uci"], move["san"]))
+                    res.add(Error.Multiple)
+        return res
+
+    def probe_DTZ_to_DTM(self: PuzzleChecker, fen: str, nb_moves: int) -> bool:
+        """Used when DTM is not available. It probes DTZ for `nb_moves`, 
+        and return `True` if what occurs.
+        In the end probing DTZ >= DTM, so it will have false negatives (Not finding mate where it should), but no false positive.
+        """
+        r = self.http.get(TB_API.format(fen))
+        rep = r.json()
+        log.debug(f"probing {nb_moves} moves, fen: {fen} rep: {str(rep)}")
+        return self.probe_DTZ_to_DTM()
+
+    def list_unchecked_puzzles(self: PuzzleChecker, mate_puzzles = False) -> List[Tuple[str, Puzzle]]:
+        if mate_puzzles:
+            all_7p_puzzles = self.only_mate_puzzles()
+        else:
+            all_7p_puzzles = self.filtered_mate_puzzles()
         already_checked_puzzles = self.list_puzzles_checked()
         checked_but_not_listed_anymore = list(filter(lambda x: not x in all_7p_puzzles.keys(), already_checked_puzzles))
-        if checked_but_not_listed_anymore:
+        if checked_but_not_listed_anymore and not mate_puzzles:
             log.error(f"{len(checked_but_not_listed_anymore)} puzzles were checked but are not in the list of all puzzles anymore: {checked_but_not_listed_anymore}")
         unchecked_puzzles = list(filter(lambda x: not x[0] in already_checked_puzzles, all_7p_puzzles.items()))
         return unchecked_puzzles
 
     def list_legacy_puzzle(self: PuzzleChecker) -> Set[str]:
         """Puzzles that are not longer in `DB_PATH`"""
-        all_7p_puzzles = self.filtered_mate_puzzles()
+        all_7p_puzzles_ids = self.filtered_mate_puzzles().keys()
         already_checked_puzzles = self.list_puzzles_checked()
-        checked_but_not_listed_anymore = set(filter(lambda x: not x in all_7p_puzzles.keys(), already_checked_puzzles))
+        checked_but_not_listed_anymore = set(filter(lambda x: not x in all_7p_puzzles_ids, already_checked_puzzles))
         if checked_but_not_listed_anymore:
             log.error(f"{len(checked_but_not_listed_anymore)} puzzles were checked but are not in the list of all puzzles anymore: {checked_but_not_listed_anymore}")
         return checked_but_not_listed_anymore
@@ -279,8 +322,7 @@ class PuzzleChecker:
 
     def filtered_mate_puzzles(self: PuzzleChecker) -> Dict[str, Puzzle]:
         """
-        returns a dic puzzle_id -> bool
-        bool is True if the goal of the puzzle is to win, False if it's to draw.
+        returns a dic puzzle_id -> Puzzle
         Mate puzzles are currently discarded because there can be possibly multiple solutions
         """
         #Fields for the filtered puzzles: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,pieces
@@ -290,9 +332,30 @@ class PuzzleChecker:
             for puzzle in puzzles:
                 if "mate" in puzzle["Themes"]:
                     continue
-
                 expected_winning = not "equality" in puzzle["Themes"]
                 dic[puzzle["PuzzleId"]] = Puzzle(fen=puzzle["FEN"], moves=puzzle["Moves"].split(), expected_winning=expected_winning)
+
+        return dic
+
+    def only_mate_puzzles(self: PuzzleChecker) -> Dict[str, Puzzle]:
+        """
+        returns a dic puzzle_id -> Puzzle
+        only Mate puzzles are kept
+        """
+        #Fields for the filtered puzzles: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,pieces
+        dic = {}
+        with open(PUZZLE_PATH, newline='') as csvfile:
+            puzzles = csv.DictReader(csvfile)
+            for puzzle in puzzles:
+                if not "mate" in puzzle["Themes"]:
+                    continue
+                mateIn = None
+                for theme in  puzzle["Themes"]:
+                    if "mateIn" in theme:
+                        assert mateIn is None # only one "mateIn" tag should be possible
+                        mateIn = int(theme[5:])
+                expected_winning = not "equality" in puzzle["Themes"]
+                dic[puzzle["PuzzleId"]] = Puzzle(fen=puzzle["FEN"], moves=puzzle["Moves"].split(), expected_winning=expected_winning, mate=mateIn)
 
         return dic
 
@@ -323,6 +386,16 @@ def checking_puzzles() -> None:
     log.info("Checking puzzles with <= 7 pieces")
     checker = PuzzleChecker()
     checker.check()
+    log.info("done")
+
+def checking_mate_puzzles() -> None:
+    """
+    EXPERIMENTAL: Look at every puzzle in `PUZZLE_PATH` with a mate tag, and check them gainst syzygy tb.
+    Save the results in `PUZZLE_CHECKED_PATH`, with every line being `<puzzle_id> <optional[error_1]> <optional[error_2]>...
+    """
+    log.info("Checking puzzles with <= 7 pieces")
+    checker = PuzzleChecker()
+    checker.check(mate=True)
     log.info("done")
 
 def incorrect_puzzles() -> None:
@@ -360,6 +433,7 @@ def main() -> None:
     commands = {
     "filter": filtering_7pieces,
     "check": checking_puzzles,
+    "exp_check_mate": checking_mate_puzzles,
     "export": incorrect_puzzles,
     "clean": remove_puzzles_no_longer_db
     }
