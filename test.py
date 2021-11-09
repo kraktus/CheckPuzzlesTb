@@ -13,7 +13,7 @@ from t import PuzzleChecker, Puzzle, Error
 #Classes#
 #########
 
-class TestChecker(unittest.TestCase):
+class Test(unittest.TestCase):
 
     def setUp(self):
         self.checker = PuzzleChecker()
@@ -57,6 +57,13 @@ class TestChecker(unittest.TestCase):
             expected_winning=True,
             mate=4) 
         self.assertEqual(self.checker.check_puzzle(puzzle), set([Error.Multiple]))
+
+    def test_right_mate_puzzle_with_multiple_solution_DTZ_only(self):
+        puzzle = Puzzle(fen="1k6/7Q/1K6/8/8/8/6nn/6nn b - - 0 1",
+            moves="b8a8 h7h8".split(),
+            expected_winning=True,
+            mate=2) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set())
 
     def test_not_mate_puzzle(self):
         puzzle = Puzzle(fen="1k6/2Q5/1K6/8/8/8/8/4qq2 b - - 0 1",

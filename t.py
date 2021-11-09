@@ -243,12 +243,16 @@ class PuzzleChecker:
                 continue
             if move["dtm"] is not None:
                 # Another move that result in a mate in the same number of moves
-                if -int(move["dtm"]) == (mate_in - 1) :
+                if -int(move["dtm"]) == (mate_in - 1) : # DTM is negative since from the opponent point of view
                     log.error("position {} after {} is not mate in {}, but {}.".format(fen, move["uci"], mate_in, rep["dtm"]))
                     res.add(Error.Multiple)
             else:
                 # If we do not have DTM, we approximate DTZ to DTM.
-                if move["category"] == "loss" and move["uci"] != expected_move: # a winning move which is not `expected_move`, puzzle is wrong
+                if move["category"] == "loss" and move["uci"] != expected_move: # a winning move which is not `expected_move`, puzzle might be wrong (need to probe DTZ)
+                    b = Board(fen=fen)
+                    b.push_uci(move["uci"])
+                    if not self.probe_DTZ_to_DTM(b.fen(), mate_in - 1):
+                        continue
                     log.error(f"in position {fen}," + " {}({}) is also winning".format(move["uci"], move["san"]))
                     res.add(Error.Multiple)
         return res
@@ -261,11 +265,11 @@ class PuzzleChecker:
         res = False
         b = Board(fen=fen)
         while nb_plies >= 0 and not res:
-            r = self.http.get(TB_API.format(fen))
+            r = self.http.get(TB_API.format(b.fen()))
             rep = r.json()
             log.debug(f"probing {nb_plies} moves, fen: {fen} rep: {str(rep)}")
             b.push_uci(rep["moves"][0]["uci"])
-            res = rep["checkmate"]
+            res = rep["moves"][0]["checkmate"]
             nb_plies -= 1
         return res
 
