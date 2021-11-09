@@ -143,7 +143,7 @@ class Puzzle:
     fen: str
     moves: List[str]
     expected_winning: bool
-    mate: Optional[int] = None
+    mate: Optional[int] = None # in terms of number of plies, so twice the number in the theme list.
 
 class PuzzleChecker:
 
@@ -189,7 +189,7 @@ class PuzzleChecker:
         log.debug(f"fen: {fen} rep: {str(rep)}")
         if puzzle.mate is not None:
             log.info("Checking mate")
-            res = self.check_mate(fen, expected_move, rep, move_number)
+            res = self.check_mate(fen, expected_move, rep, puzzle.mate - move_number)
         elif puzzle.expected_winning:
             res = self.check_winning(fen, expected_move, rep)
         else: # For equality puzzles
@@ -243,9 +243,9 @@ class PuzzleChecker:
                 continue
             if move["dtm"] is not None:
                 # Another move that result in a mate in the same number of moves
-                if int(move["dtm"]) == (mate_in - 1) :
+                if -int(move["dtm"]) == (mate_in - 1) :
                     log.error("position {} after {} is not mate in {}, but {}.".format(fen, move["uci"], mate_in, rep["dtm"]))
-                    res.add(Error.Wrong)
+                    res.add(Error.Multiple)
             else:
                 # If we do not have DTM, we approximate DTZ to DTM.
                 if move["category"] == "loss" and move["uci"] != expected_move: # a winning move which is not `expected_move`, puzzle is wrong
@@ -253,15 +253,21 @@ class PuzzleChecker:
                     res.add(Error.Multiple)
         return res
 
-    def probe_DTZ_to_DTM(self: PuzzleChecker, fen: str, nb_moves: int) -> bool:
-        """Used when DTM is not available. It probes DTZ for `nb_moves`, 
+    def probe_DTZ_to_DTM(self: PuzzleChecker, fen: str, nb_plies: int) -> bool:
+        """Used when DTM is not available. It probes DTZ for `nb_plies`, 
         and return `True` if what occurs.
         In the end probing DTZ >= DTM, so it will have false negatives (Not finding mate where it should), but no false positive.
         """
-        r = self.http.get(TB_API.format(fen))
-        rep = r.json()
-        log.debug(f"probing {nb_moves} moves, fen: {fen} rep: {str(rep)}")
-        return self.probe_DTZ_to_DTM()
+        res = False
+        b = Board(fen=fen)
+        while nb_plies >= 0 and not res:
+            r = self.http.get(TB_API.format(fen))
+            rep = r.json()
+            log.debug(f"probing {nb_plies} moves, fen: {fen} rep: {str(rep)}")
+            b.push_uci(rep["moves"][0]["uci"])
+            res = rep["checkmate"]
+            nb_plies -= 1
+        return res
 
     def list_unchecked_puzzles(self: PuzzleChecker, mate_puzzles = False) -> List[Tuple[str, Puzzle]]:
         if mate_puzzles:
@@ -353,7 +359,7 @@ class PuzzleChecker:
                 for theme in  puzzle["Themes"]:
                     if "mateIn" in theme:
                         assert mateIn is None # only one "mateIn" tag should be possible
-                        mateIn = int(theme[5:])
+                        mateIn = int(theme[5:])*2
                 expected_winning = not "equality" in puzzle["Themes"]
                 dic[puzzle["PuzzleId"]] = Puzzle(fen=puzzle["FEN"], moves=puzzle["Moves"].split(), expected_winning=expected_winning, mate=mateIn)
 

@@ -41,21 +41,28 @@ class TestChecker(unittest.TestCase):
         puzzle = Puzzle(fen="1k6/2Q5/1K6/8/8/8/8/4qq2 b - - 0 1",
             moves="b8a8 c7c8".split(),
             expected_winning=True,
-            mate=1) 
+            mate=2) 
         self.assertEqual(self.checker.check_puzzle(puzzle), set())
 
     def test_right_mate_without_DTM(self):
         puzzle = Puzzle(fen="1k6/8/1KR5/7q/7q/8/8/5q1q b - - 0 1",
             moves="b8a8 c6c8".split(),
             expected_winning=True,
-            mate=1) 
+            mate=2) 
         self.assertEqual(self.checker.check_puzzle(puzzle), set())
+
+    def test_wrong_mate_with_DTM(self):
+        puzzle = Puzzle(fen="1k6/8/1K6/8/8/8/1R6/8 b - - 0 1",
+            moves="b8a8 b2d2 a8b8 d2d8".split(),
+            expected_winning=True,
+            mate=4) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set([Error.Multiple]))
 
     def test_not_mate_puzzle(self):
         puzzle = Puzzle(fen="1k6/2Q5/1K6/8/8/8/8/4qq2 b - - 0 1",
             moves="b8a8 c7b8".split(), # giving up the queen
             expected_winning=True,
-            mate=1) 
+            mate=2) 
         self.assertEqual(self.checker.check_puzzle(puzzle), set([Error.Wrong]))
 
 ######
