@@ -65,6 +65,15 @@ class Test(unittest.TestCase):
             mate=2) 
         self.assertEqual(self.checker.check_puzzle(puzzle), set())
 
+    def test_right_mate_puzzle_DTZ_only(self):
+        """There is one mate in 2 and mate in 3
+        wrong puzzle but not able to detect it for now"""
+        puzzle = Puzzle(fen="1k6/8/1K6/8/8/8/1R3nn1/6nn b - - 3 3",
+            moves="b8a8 b6c7 a8a7 b2a2".split(),
+            expected_winning=True,
+            mate=4) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set())
+
     def test_not_mate_puzzle(self):
         puzzle = Puzzle(fen="1k6/2Q5/1K6/8/8/8/8/4qq2 b - - 0 1",
             moves="b8a8 c7b8".split(), # giving up the queen
