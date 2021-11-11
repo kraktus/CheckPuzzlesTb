@@ -359,7 +359,6 @@ class PuzzleChecker:
                     if "mateIn" in theme:
                         assert mateIn is None # only one "mateIn" tag should be possible
                         mateIn = int(theme[6:])*2
-                        print("mateIn", mateIn)
                 assert mateIn is not None # checkmate puzzles have all "mateIn" tags
                 expected_winning = not "equality" in puzzle["Themes"]
                 dic[puzzle["PuzzleId"]] = Puzzle(fen=puzzle["FEN"], moves=puzzle["Moves"].split(), expected_winning=expected_winning, mate=mateIn)
