@@ -230,20 +230,21 @@ class PuzzleChecker:
         if rep["category"] != "win":
             log.error(f"position {fen} can't be won by side to move, category: " + "{}".format(rep["category"]))
             res.add(Error.Wrong)
-        if rep["dtm"] is not None and int(rep["dtm"]) != mate_in:
+        if rep["dtm"] is not None and rep["dtm"] != mate_in:
             log.error("position {} is not mate in {}, but {}.".format(fen, mate_in, rep["dtm"]))
             res.add(Error.Wrong)
         for move in rep["moves"]:
             # move["category"] is from the opponent's point of vue
-            if move["uci"] == expected_move and move["category"] != "loss":
-                log.error(f"in position {fen}," + " {}({}) is not winning, opponent's category: {}".format(move["uci"], move["san"], move["category"]))
-                res.add(Error.Wrong)
             if move["checkmate"]: # Always good
                 continue
-            if move["dtm"] is not None:
+            if move["uci"] == expected_move:
+                if move["category"] != "loss":
+                    log.error(f"in position {fen}," + " {}({}) is not winning, opponent's category: {}".format(move["uci"], move["san"], move["category"]))
+                    res.add(Error.Wrong)
+            elif move["dtm"] is not None:
                 # Another move that result in a mate in the same number of moves
-                if move["category"] == "loss" and -int(move["dtm"]) == (mate_in - 1) : # DTM is negative since from the opponent point of view
-                    log.error("position {} after {} is not mate in {}, but {}.".format(fen, move["uci"], mate_in, rep["dtm"]))
+                if move["category"] == "loss" and -move["dtm"] == (mate_in - 1) : # DTM is negative since from the opponent point of view
+                    log.error("position {} after {} is not mate in {}, but {}.".format(fen, move["uci"], mate_in - 1, -move["dtm"]))
                     res.add(Error.Multiple)
             # Not checking puzzles without DTM because it is not possible to reliably convert DTZ to DTM.
         return res
