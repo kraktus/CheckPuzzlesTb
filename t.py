@@ -188,7 +188,6 @@ class PuzzleChecker:
         rep = r.json()
         log.debug(f"fen: {fen} rep: {str(rep)}")
         if puzzle.mate is not None:
-            log.info("Checking mate")
             res = self.check_mate(fen, expected_move, rep, puzzle.mate - move_number)
         elif puzzle.expected_winning:
             res = self.check_winning(fen, expected_move, rep)
@@ -243,7 +242,7 @@ class PuzzleChecker:
                 continue
             if move["dtm"] is not None:
                 # Another move that result in a mate in the same number of moves
-                if -int(move["dtm"]) == (mate_in - 1) : # DTM is negative since from the opponent point of view
+                if move["category"] == "loss" and -int(move["dtm"]) == (mate_in - 1) : # DTM is negative since from the opponent point of view
                     log.error("position {} after {} is not mate in {}, but {}.".format(fen, move["uci"], mate_in, rep["dtm"]))
                     res.add(Error.Multiple)
             # Not checking puzzles without DTM because it is not possible to reliably convert DTZ to DTM.
