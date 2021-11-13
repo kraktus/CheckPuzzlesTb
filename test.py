@@ -13,7 +13,7 @@ from t import PuzzleChecker, Puzzle, Error
 #Classes#
 #########
 
-class TestChecker(unittest.TestCase):
+class Test(unittest.TestCase):
 
     def setUp(self):
         self.checker = PuzzleChecker()
@@ -36,6 +36,50 @@ class TestChecker(unittest.TestCase):
             moves="b2b4 g5g4 h3g4 f5g4 b4b5 g4g3 c5c6 d5d6".split(),
             expected_winning=False) 
         self.assertEqual(self.checker.check_puzzle(puzzle), set([Error.Wrong, Error.Multiple]))
+
+    def test_right_mate_puzzle_with_multiple_mates(self):
+        puzzle = Puzzle(fen="1k6/2Q5/1K6/8/8/8/8/4qq2 b - - 0 1",
+            moves="b8a8 c7c8".split(),
+            expected_winning=True,
+            mate=2) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set())
+
+    def test_right_mate_without_DTM(self):
+        puzzle = Puzzle(fen="1k6/8/1KR5/7q/7q/8/8/5q1q b - - 0 1",
+            moves="b8a8 c6c8".split(),
+            expected_winning=True,
+            mate=2) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set())
+
+    def test_wrong_mate_with_DTM(self):
+        puzzle = Puzzle(fen="1k6/8/1K6/8/8/8/1R6/8 b - - 0 1",
+            moves="b8a8 b2d2 a8b8 d2d8".split(),
+            expected_winning=True,
+            mate=4) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set([Error.Multiple]))
+
+    def test_right_mate_puzzle_with_multiple_solution_DTZ_only(self):
+        puzzle = Puzzle(fen="1k6/7Q/1K6/8/8/8/6nn/6nn b - - 0 1",
+            moves="b8a8 h7h8".split(),
+            expected_winning=True,
+            mate=2) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set())
+
+    def test_right_mate_puzzle_DTZ_only(self):
+        """There is one mate in 2 and mate in 3
+        wrong puzzle but not able to detect it for now"""
+        puzzle = Puzzle(fen="1k6/8/1K6/8/8/8/1R3nn1/6nn b - - 3 3",
+            moves="b8a8 b6c7 a8a7 b2a2".split(),
+            expected_winning=True,
+            mate=4) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set())
+
+    def test_not_mate_puzzle(self):
+        puzzle = Puzzle(fen="1k6/2Q5/1K6/8/8/8/8/4qq2 b - - 0 1",
+            moves="b8a8 c7b8".split(), # giving up the queen
+            expected_winning=True,
+            mate=2) 
+        self.assertEqual(self.checker.check_puzzle(puzzle), set([Error.Wrong]))
 
 ######
 #Main#
