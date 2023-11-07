@@ -75,27 +75,33 @@ log.addHandler(handler_2)
 
 class FileHandler:
 
+    def __init__(self: FileHandler) -> None:
+        # try to dynamically get the fieldnames from the first line of the csv if present, or fallback to old fieldnames for backward compatibility
+        with open(DB_PATH, newline='') as puzzle_db: # type: ignore
+            first_line = puzzle_db.readline()
+        if "PuzzleId" in first_line:
+            self.fieldnames = first_line.split(",")
+            self.has_headers = True
+        else:
+            self.fieldnames = ['PuzzleId', 'FEN', 'Moves', 'Rating', 'RatingDeviation', 'Popularity', 'NbPlays', 'Themes', 'GameUrl']
+            self.has_headers = False
+
     def add_puzzle(self: FileHandler, writer: csv.DictWriter, puzzle: List[str]) -> None:
-        writer.writerow({'PuzzleId': puzzle[0], 
-                         'FEN': puzzle[1], 
-                         'Moves': puzzle[2], 
-                         'Rating': puzzle[3], 
-                         'RatingDeviation': puzzle[4],
-                         'Popularity': puzzle[5], 
-                         'NbPlays': puzzle[6], 
-                         'Themes': puzzle[7], 
-                         'GameUrl': puzzle[8]})
+        """Add a puzzle to the csv file"""
+        # write row using fieldnames
+        writer.writerow({self.fieldnames[i]: puzzle[i] for i in range(len(puzzle))})
 
 
     def extract_puzzle_inf_7piece(self: FileHandler) -> None:
         #Fields for the new db: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl
-        with open(DB_PATH, newline='') as csvfile:
+        with open(DB_PATH, newline='') as csvfile: # type: ignore
             with open(PUZZLE_PATH, "w") as output:
-                # pieces paramater is the number of piece of the first position with <=7 pieces on the board
-                fieldnames = ['PuzzleId', 'FEN', 'Moves', 'Rating', 'RatingDeviation', 'Popularity', 'NbPlays', 'Themes', 'GameUrl']
-                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                # pieces parameter is the number of piece of the first position with <=7 pieces on the board
+                writer = csv.DictWriter(output, fieldnames=self.fieldnames)
                 writer.writeheader()
                 puzzles = csv.reader(csvfile, delimiter=',', quotechar='|')
+                if self.has_headers:
+                    next(puzzles) # skip headers
                 dep = time.time()
                 for line, puzzle in enumerate(puzzles):
                     print(f"\r{line} puzzles processed, {time.time() - dep:.2f}s",end="")
@@ -122,7 +128,7 @@ class FileHandler:
 
 
     def remove_puzzles(self, l_puzzle_id: Set[str]) -> None:
-        """Remove all  `l_puzzle_id` puzzles from `PUZZLE_CHECKED_PATH`"""
+        """Remove all `l_puzzle_id` puzzles from `PUZZLE_CHECKED_PATH`"""
         temp_name = "temporary_file.txt"
         with open(PUZZLE_CHECKED_PATH, 'r') as file_input, open(temp_name, 'w') as temp_file:
             for line in file_input:
