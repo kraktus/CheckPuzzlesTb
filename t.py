@@ -104,7 +104,8 @@ class FileHandler:
                     next(puzzles) # skip headers
                 dep = time.time()
                 for line, puzzle in enumerate(puzzles):
-                    print(f"\r{line} puzzles processed, {time.time() - dep:.2f}s",end="")
+                    if line % 1000 == 0:
+                        print(f"\r{line} puzzles processed, {time.time() - dep:.2f}s",end="")
                     if self.has_puzzle_fewer_8p(puzzle):
                         self.add_puzzle(writer, puzzle)
 
