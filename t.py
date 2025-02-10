@@ -377,7 +377,7 @@ class PuzzleChecker:
 #############
 
 def nb_piece(b: Board) -> int:
-    return bin(b.occupied).count('1')
+    return len(b.occupied)
 
 def is_draw(api_rep: Dict[str, str]) -> bool:
     return api_rep["category"] in ["cursed-win", "draw", "blessed-loss"]
