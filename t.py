@@ -38,7 +38,7 @@ LOG_PATH = "puz.log"
 PUZZLE_PATH = "puzzle.csv"
 PUZZLE_CHECKED_PATH = "puzzle_checked.txt"
 
-TB_API = "http://tablebase.lichess.ovh/standard?fen={}"
+TB_API = os.getenv("TB_API", "https://tablebase.lichess.ovh")
 
 
 RETRY_STRAT = Retry(
@@ -92,11 +92,10 @@ class FileHandler:
         writer.writerow({self.fieldnames[i]: puzzle[i] for i in range(len(puzzle))})
 
 
-    def extract_puzzle_inf_7piece(self: FileHandler) -> None:
+    def filter_tablebase(self: FileHandler) -> None:
         # Fields for the new db: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags
         with open(DB_PATH) as csvfile: # type: ignore
             with open(PUZZLE_PATH, "w") as output:
-                # pieces parameter is the number of piece of the first position with <=7 pieces on the board
                 writer = csv.DictWriter(output, fieldnames=self.fieldnames)
                 writer.writeheader()
                 puzzles = csv.reader(csvfile, delimiter=',', quotechar='|')
@@ -106,25 +105,28 @@ class FileHandler:
                 for line, puzzle in enumerate(puzzles):
                     if line % 1000 == 0:
                         print(f"\r{line} puzzles processed, {time.time() - dep:.2f}s",end="")
-                    if self.has_puzzle_fewer_8p(puzzle):
+                    if self.has_tablebase_coverage(puzzle):
                         self.add_puzzle(writer, puzzle)
 
 
-    def has_puzzle_fewer_8p(self: FileHandler, puzzle: List[str]) -> bool:
-        """Returns `True` if at a point the puzzle has 7 pieces or fewer."""
+    def has_tablebase_coverage(self: FileHandler, puzzle: List[str]) -> bool:
+        """
+        Returns `True` if at a point the puzzle has 7 pieces or fewer, or
+        8 pieces and opposing pawns.
+        """
         b = Board(fen=puzzle[1])
         moves = puzzle[2].split()
         nb_pieces = nb_piece(b)
 
-        if nb_pieces - len(moves) > 7: # Even if each move is a capture, there're still too many pieces
+        if nb_pieces - len(moves) > 8: # Even if each move is a capture, there're still too many pieces
             return False
-        elif nb_pieces <= 7:
+        elif nb_pieces <= 7 or (nb_pieces <= 8 and is_op1(b)):
             return True
         for move in moves:
             b.push_uci(move)
             nb_pieces = nb_piece(b)
-            if nb_pieces <= 7:
-                return True # should be always 7
+            if nb_pieces <= 7 or (nb_pieces <= 8 and is_op1(b)):
+                return True
         return False
 
 
@@ -175,13 +177,14 @@ class PuzzleChecker:
                 if bool(res): # Not empty
                     log.error(f"puzzle {puzzle_id} contains some errors: {res}")
                 output.write(puzzle_id + " " + " ".join([x.name for x in res]) + "\n")
-                time.sleep(0.55) #rate-limited otherwise
+                if TB_API == "https://tablebase.lichess.ovh":
+                    time.sleep(0.55) # rate-limited otherwise
 
     def check_puzzle(self: PuzzleChecker, puzzle: Puzzle) -> Set[Error]:
         b = Board(fen=puzzle.fen)
         res: Set[Error] = set()
         for i, move in enumerate(puzzle.moves):
-            if i % 2 and nb_piece(b) <= 7: # 0, 2, 4... are moves made by the opponent, we don't check them
+            if i % 2 and (nb_piece(b) <= 7 or nb_piece(b) <= 8 and is_op1(b)): # 0, 2, 4... are moves made by the opponent, we don't check them
                 res = res.union(self.req(b.fen(), move, puzzle, i))
             b.push_uci(move)
         return res
@@ -191,7 +194,7 @@ class PuzzleChecker:
         return a set of errors taking in count the goal of the puzzle
         log wrong puzzles
         """
-        r = self.http.get(TB_API.format(fen))
+        r = self.http.get(f"{TB_API}/standard", params={"fen": fen})
         rep = r.json()
         log.debug(f"fen: {fen} rep: {str(rep)}")
         if puzzle.mate is not None:
@@ -204,37 +207,37 @@ class PuzzleChecker:
 
     def check_winning(self: PuzzleChecker, fen: str, expected_move: str, rep: Dict[str, Any]) -> Set[Error]:
         res = set()
-        if rep["category"] != "win":
+        if rep["category"] != "unknown" and not is_win(rep):
             log.error(f"position {fen} can't be won by side to move, category: " + "{}".format(rep["category"]))
             res.add(Error.Wrong)
         for move in rep["moves"]:
             # move["category"] is from the opponent's point of vue
-            if move["uci"] == expected_move and move["category"] != "loss":
+            if move["uci"] == expected_move and move["category"] != "unknown" and not is_loss(move):
                 log.error(f"in position {fen}," + " {}({}) is not winning, opponent's category: {}".format(move["uci"], move["san"], move["category"]))
                 res.add(Error.Wrong)
-            elif move["category"] == "loss" and move["uci"] != expected_move: # a winning move which is not `expected_move`, puzzle is wrong 
+            elif is_loss(move) and move["uci"] != expected_move: # a winning move which is not `expected_move`, puzzle is wrong
                 log.error(f"in position {fen}," + " {}({}) is also winning".format(move["uci"], move["san"]))
                 res.add(Error.Multiple)
         return res
 
     def check_drawing(self: PuzzleChecker, fen: str, expected_move: str, rep: Dict[str, Any]) -> Set[Error]:
         res = set()
-        if not is_draw(rep):
+        if rep["category"] != "unknown" and not is_draw(rep):
             log.error(f"position {fen} is not draw, category: " + "{}".format(rep["category"] ))
             res.add(Error.Wrong)
         for move in rep["moves"]:
             # move["category"] is from the opponent's point of vue
-            if move["uci"] == expected_move and not is_draw(move):
+            if move["uci"] == expected_move and move["category"] != "unknown" and not is_draw(move):
                 log.error(f"in position {fen}," + " {}({}) is not drawing, opponent's category: {}".format(move["uci"], move["san"], move["category"]))
                 res.add(Error.Wrong)
-            elif is_draw(move) and move["uci"] != expected_move: # a drawing move which is not `expected_move`, puzzle is wrong 
+            elif is_draw(move) and move["uci"] != expected_move: # a drawing move which is not `expected_move`, puzzle is wrong
                 log.error(f"in position {fen}," + " {}({}) is also drawing".format(move["uci"], move["san"]))
                 res.add(Error.Multiple)
         return res
 
     def check_mate(self: PuzzleChecker, fen: str, expected_move: str, rep: Dict[str, Any], mate_in: int) -> Set[Error]:
         res = set()
-        if rep["category"] != "win":
+        if rep["category"] != "unknown" and not is_win(rep["category"]):
             log.error(f"position {fen} can't be won by side to move, category: " + "{}".format(rep["category"]))
             res.add(Error.Wrong)
         if rep["dtm"] is not None and rep["dtm"] != mate_in:
@@ -250,7 +253,7 @@ class PuzzleChecker:
                     res.add(Error.Wrong)
             elif move["dtm"] is not None:
                 # Another move that result in a mate in the same number of moves
-                if move["category"] == "loss" and -move["dtm"] == (mate_in - 1) : # DTM is negative since from the opponent point of view
+                if is_loss(move["category"]) and -move["dtm"] == (mate_in - 1) : # DTM is negative since from the opponent point of view
                     log.error("position {} after {} is not mate in {}, but {}.".format(fen, move["uci"], mate_in - 1, -move["dtm"]))
                     res.add(Error.Multiple)
             # Not checking puzzles without DTM because it is not possible to reliably convert DTZ to DTM.
@@ -258,7 +261,7 @@ class PuzzleChecker:
 
     # It is not possible to reliably convert DTZ to DTM.
     # def probe_DTZ_to_DTM(self: PuzzleChecker, fen: str, nb_plies: int) -> bool:
-    #     """Used when DTM is not available. It probes DTZ for `nb_plies`, 
+    #     """Used when DTM is not available. It probes DTZ for `nb_plies`,
     #     and return `True` if what occurs.
     #     In the end probing DTZ >= DTM, so it will have false negatives (Not finding mate where it should), but no false positive.
     #     """
@@ -266,7 +269,7 @@ class PuzzleChecker:
     #     b = Board(fen=fen)
     #     print(b) # DEBUG
     #     while nb_plies > 0 and not res:
-    #         r = self.http.get(TB_API.format(b.fen()))
+    #         r = self.http.get(f"{TB_API}/standard", params={"fen": b.fen()})
     #         rep = r.json()
     #         log.debug(f"probing {nb_plies} moves, fen: {fen} rep: {str(rep)}")
     #         b.push_uci(rep["moves"][0]["uci"])
@@ -379,16 +382,28 @@ class PuzzleChecker:
 def nb_piece(b: Board) -> int:
     return chess.popcount(b.occupied)
 
+def is_op1(b: Board) -> bool:
+    wp = b.pieces_mask(chess.PAWN, chess.WHITE)
+    wp_paths = (wp << 8) | (wp << 16) | (wp << 24) | (wp << 32) | (wp << 40)
+    return bool(wp_paths & b.pieces_mask(chess.PAWN, chess.BLACK))
+
 def is_draw(api_rep: Dict[str, str]) -> bool:
     return api_rep["category"] in ["cursed-win", "draw", "blessed-loss"]
 
-def filtering_7pieces() -> None:
+def is_win(api_rep: Dict[str, str]) -> bool:
+    return api_rep["category"] in ["win", "syzygy-win", "maybe-win"]
+
+def is_loss(api_rep: Dict[str, str]) -> bool:
+    return api_rep["category"] in ["loss", "syzygy-loss", "maybe-loss"]
+
+def filtering_puzzles() -> None:
     """
-    Select all puzzles from `DB_PATH` that have at point <= 7 pieces on the board, and save them in file `PUZZLE_PATH`
+    Select all puzzles from `DB_PATH` that have at point <= 7 pieces on the board,
+    or 8 piece op1 positions, and save them in file `PUZZLE_PATH`
     """
-    log.info("Looking for puzzles with <= 7 pieces")
+    log.info("Looking for puzzles with tablebae coverage")
     file_handler = FileHandler()
-    file_handler.extract_puzzle_inf_7piece()
+    file_handler.filter_tablebase()
     log.info("done")
 
 def checking_puzzles() -> None:
@@ -396,7 +411,7 @@ def checking_puzzles() -> None:
     Look at every puzzle in `PUZZLE_PATH`, minus the ones with mate tag, and check them gainst syzygy tb.
     Save the results in `PUZZLE_CHECKED_PATH`, with every line being `<puzzle_id> <optional[error_1]> <optional[error_2]>...
     """
-    log.info("Checking puzzles with <= 7 pieces")
+    log.info("Checking puzzles with tablebase coverage")
     checker = PuzzleChecker()
     checker.check()
     log.info("done")
@@ -406,7 +421,7 @@ def checking_mate_puzzles() -> None:
     EXPERIMENTAL: Look at every puzzle in `PUZZLE_PATH` with a mate tag, and check them gainst syzygy tb.
     Save the results in `PUZZLE_CHECKED_PATH`, with every line being `<puzzle_id> <optional[error_1]> <optional[error_2]>...
     """
-    log.info("Checking puzzles with <= 7 pieces")
+    log.info("Checking mate puzzles")
     checker = PuzzleChecker()
     checker.check(mate=True)
     log.info("done")
@@ -444,7 +459,7 @@ def doc(dic: Dict[str, Callable[..., Any]]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
     commands = {
-    "filter": filtering_7pieces,
+    "filter": filtering_puzzles,
     "check": checking_puzzles,
     "exp_check_mate": checking_mate_puzzles,
     "export": incorrect_puzzles,
@@ -471,5 +486,3 @@ if __name__ == "__main__":
 
 
     # Some rarities where the player to move actually lose: https://lichess.org/training/DHvnF https://lichess.org/training/ERVwp https://lichess.org/training/U62fH https://lichess.org/training/jBUOV https://lichess.org/training/nBqNu https://lichess.org/training/snDwA
-    
-
