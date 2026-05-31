@@ -77,13 +77,13 @@ class FileHandler:
 
     def __init__(self: FileHandler) -> None:
         # try to dynamically get the fieldnames from the first line of the csv if present, or fallback to old fieldnames for backward compatibility
-        with open(DB_PATH, newline='') as puzzle_db: # type: ignore
-            first_line = puzzle_db.readline()
+        with open(DB_PATH) as puzzle_db: # type: ignore
+            first_line = puzzle_db.readline().rstrip()
         if "PuzzleId" in first_line:
             self.fieldnames = first_line.split(",")
             self.has_headers = True
         else:
-            self.fieldnames = ['PuzzleId', 'FEN', 'Moves', 'Rating', 'RatingDeviation', 'Popularity', 'NbPlays', 'Themes', 'GameUrl']
+            self.fieldnames = ['PuzzleId', 'FEN', 'Moves', 'Rating', 'RatingDeviation', 'Popularity', 'NbPlays', 'Themes', 'GameUrl', 'OpeningTags']
             self.has_headers = False
 
     def add_puzzle(self: FileHandler, writer: csv.DictWriter, puzzle: List[str]) -> None:
@@ -93,8 +93,8 @@ class FileHandler:
 
 
     def extract_puzzle_inf_7piece(self: FileHandler) -> None:
-        #Fields for the new db: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl
-        with open(DB_PATH, newline='') as csvfile: # type: ignore
+        # Fields for the new db: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags
+        with open(DB_PATH) as csvfile: # type: ignore
             with open(PUZZLE_PATH, "w") as output:
                 # pieces parameter is the number of piece of the first position with <=7 pieces on the board
                 writer = csv.DictWriter(output, fieldnames=self.fieldnames)
@@ -339,7 +339,7 @@ class PuzzleChecker:
         """
         #Fields for the filtered puzzles: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,pieces
         dic = {}
-        with open(PUZZLE_PATH, newline='') as csvfile:
+        with open(PUZZLE_PATH) as csvfile:
             puzzles = csv.DictReader(csvfile)
             for puzzle in puzzles:
                 if "mate" in puzzle["Themes"]:
@@ -356,7 +356,7 @@ class PuzzleChecker:
         """
         #Fields for the filtered puzzles: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,pieces
         dic = {}
-        with open(PUZZLE_PATH, newline='') as csvfile:
+        with open(PUZZLE_PATH) as csvfile:
             puzzles = csv.DictReader(csvfile)
             for puzzle in puzzles:
                 if not "mate" in puzzle["Themes"]:
